@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 contract LandRegistry {
     struct Property {
@@ -23,4 +23,11 @@ contract LandRegistry {
         properties[_propertyId].owner = _newOwner;
         emit PropertyTransferred(_propertyId, msg.sender, _newOwner);
     }
+    function getOwner(string memory _propertyId) public view returns (address) {
+    // If not registered, return the "zero address" (0x000...)
+    if (!properties[_propertyId].isRegistered) {
+        return address(0);
+    }
+    return properties[_propertyId].owner;
+}
 }

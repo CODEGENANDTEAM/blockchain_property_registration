@@ -26,13 +26,22 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Feedback State (Success/Error Messages)
+  const [feedback, setFeedback] = useState({ type: '', message: '' });
+
+  // Helper to show temporary messages
+  const showFeedback = (type, message) => {
+    setFeedback({ type, message });
+    // Auto-hide after 5 seconds
+    setTimeout(() => setFeedback({ type: '', message: '' }), 5000);
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
         const _web3 = getWeb3();
         const instance = getContract(_web3);
 
-        // Auto-detect Ganache Account
         const accounts = await _web3.eth.getAccounts();
         const currentAccount = accounts[0];
         const bal = await _web3.eth.getBalance(currentAccount);
@@ -42,7 +51,6 @@ function App() {
         setAccount(currentAccount);
         setBalance(_web3.utils.fromWei(bal, 'ether'));
 
-        // Load initial data
         fetchProperties('ALL', currentAccount);
       } catch (err) {
         console.error(err);
@@ -57,14 +65,13 @@ function App() {
     try {
       let q;
       if (viewMode === 'MINE') {
-        // Query: "Show me everything I CREATED"
-        // Note: You might need to create a Firestore Index for this to work perfectly
+        // Show assets I created (even if transferred later)
         q = query(
           collection(db, "properties"),
           where("creator", "==", currentAccount)
         );
       } else {
-        // Query: "Show me everything recently added"
+        // Show all assets
         q = query(
           collection(db, "properties"),
           orderBy("timestamp", "desc")
@@ -79,7 +86,6 @@ function App() {
     }
   };
 
-  // Switch between "All Properties" and "My Portfolio"
   const toggleView = (mode) => {
     setView(mode);
     fetchProperties(mode, account);
@@ -88,63 +94,108 @@ function App() {
   // --- ACTIONS ---
 
   const handleRegister = async () => {
-    if (!contract || !propId) return alert("Input required");
+    setFeedback({ type: '', message: '' });
+    if (!contract) return showFeedback('error', "Blockchain not ready.");
+    if (!propId) return showFeedback('error', "Input required.");
+
     setLoading(true);
 
     try {
-      // 1. Blockchain Write
-      const receipt = await contract.methods.registerProperty(propId).send({
-        from: account,
-        gas: 3000000
-      });
+      const accounts = await web3.eth.getAccounts();
+      const currentAccount = accounts[0];
 
-      // 2. Firebase Write (We track CREATOR separately now)
+      // 1. Blockchain Pre-Check
+      const owner = await contract.methods.getOwner(propId).call();
+      if (owner !== "0x0000000000000000000000000000000000000000") {
+        setLoading(false);
+        return showFeedback('error', `❌ REJECTED: '${propId}' is already taken.`);
+      }
+
+      // 2. Register on Blockchain
+      const receipt = await contract.methods
+        .registerProperty(propId)
+        .send({ from: currentAccount, gas: 3000000 });
+
+      // ✅ LOG: Kept as requested
+      console.log("📝 Register Receipt:", receipt);
+
+      // 3. Save to Firebase (Include 'creator' field!)
       await addDoc(collection(db, "properties"), {
         propertyId: propId,
-        creator: account, // ORIGINAL OWNER (You)
-        owner: account,   // CURRENT OWNER (You)
+        owner: currentAccount,
+        creator: currentAccount, // Critical for tracking history
         txHash: receipt.transactionHash,
         timestamp: new Date()
       });
 
-      alert("Success: Property Registered");
+      showFeedback('success', "Success: Property Registered!");
       setPropId('');
-      fetchProperties(view, account);
+      fetchProperties(view, currentAccount);
+
     } catch (error) {
-      alert("Error: " + error.message);
+      console.error("Registration Error:", error);
+      if (error.message && error.message.includes("Already registered")) {
+        showFeedback('error', "❌ Transaction Reverted: Property ID is taken.");
+      } else {
+        showFeedback('error', "Transaction Failed: " + error.message);
+      }
     }
     setLoading(false);
   };
 
   const handleTransfer = async () => {
     const { id, newOwner } = transferData;
-    if (!contract || !id || !newOwner) return alert("All fields required");
+    setFeedback({ type: '', message: '' });
+
+    if (!contract) return showFeedback('error', "Blockchain not ready");
+    if (!id || !newOwner) return showFeedback('error', "All fields required");
+
+    // 🛡️ Security Check
+    if (!web3.utils.isAddress(newOwner)) {
+      return showFeedback('error', "❌ Invalid Ethereum Address.");
+    }
+
     setLoading(true);
+    setFeedback({ type: 'info', message: '⏳ Signing transaction...' });
 
     try {
-      const receipt = await contract.methods.transferProperty(id, newOwner).send({
-        from: account,
-        gas: 3000000
-      });
+      // 1. Execute Transfer on Blockchain
+      const receipt = await contract.methods
+        .transferProperty(id, newOwner)
+        .send({ from: account, gas: 3000000 });
 
-      // Update Owner in DB
+      // ✅ LOG: Kept as requested
+      console.log("🔄 Transfer Receipt:", receipt);
+
+      // 2. Update Firestore
       const q = query(collection(db, "properties"), where("propertyId", "==", id));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
         const docRef = querySnapshot.docs[0].ref;
         await updateDoc(docRef, {
-          owner: newOwner, // Update ONLY the current owner
+          owner: newOwner,
           txHash: receipt.transactionHash
         });
       }
 
-      alert("Success: Transferred to " + newOwner);
+      showFeedback('success', `✅ Transferred '${id}' to ${newOwner.substring(0, 6)}...`);
       setTransferData({ id: '', newOwner: '' });
       fetchProperties(view, account);
+
     } catch (error) {
-      console.error(error);
-      alert("Transfer Failed: " + error.message);
+      console.error("Full Error:", error);
+
+      // 🔍 Parse the error string to catch "Not the owner"
+      const errorString = JSON.stringify(error, Object.getOwnPropertyNames(error)).toLowerCase();
+
+      if (errorString.includes("not the owner")) {
+        showFeedback('error', "⛔ ACCESS DENIED: You do not own this asset.");
+      } else if (errorString.includes("user denied")) {
+        showFeedback('error', "Transaction rejected.");
+      } else {
+        showFeedback('error', "Transfer Failed. Check console.");
+      }
     }
     setLoading(false);
   };
@@ -178,9 +229,9 @@ function App() {
       </header>
 
       <main className="main-layout">
-
-        {/* FORMS GRID */}
         <div className="actions-grid">
+
+          {/* REGISTER CARD */}
           <section className="card">
             <h2>REGISTER ASSET</h2>
             <div className="form-group">
@@ -195,6 +246,7 @@ function App() {
             </div>
           </section>
 
+          {/* TRANSFER CARD */}
           <section className="card">
             <h2>TRANSFER OWNERSHIP</h2>
             <div className="form-group">
@@ -208,6 +260,14 @@ function App() {
                 onChange={(e) => setTransferData({ ...transferData, newOwner: e.target.value })}
                 placeholder="New Owner (0x...)"
               />
+
+              {/* FEEDBACK AREA */}
+              {feedback.message && (
+                <div className={`status-message ${feedback.type}`}>
+                  {feedback.message}
+                </div>
+              )}
+
               <button onClick={handleTransfer} disabled={loading} className="btn-dark">
                 {loading ? "SIGNING..." : "TRANSFER"}
               </button>
@@ -215,7 +275,7 @@ function App() {
           </section>
         </div>
 
-        {/* GALLERY CONTROLS */}
+        {/* GALLERY */}
         <div className="gallery-section">
           <div className="gallery-header">
             <div className="tabs">
@@ -233,28 +293,19 @@ function App() {
             <span className="count">{properties.length} ASSETS FOUND</span>
           </div>
 
-          {/* ... inside the grid div ... */}
           <div className="grid">
             {properties.map((item) => {
-              // Safety: Default to empty string if data is missing to prevent crashes
               const owner = item.owner || "";
               const creator = item.creator || "";
               const txHash = item.txHash || "";
 
-              // Logic: Is this property currently held by the current user?
-              // (We also check if account exists to avoid errors on load)
               const isHeld = owner.toLowerCase() === (account ? account.toLowerCase() : "");
-
-              // Logic: Did the current user create this but then transfer it?
-              // (Only relevant for 'MINE' view)
               const isTransferred = (view === 'MINE' && creator.toLowerCase() === (account ? account.toLowerCase() : "") && !isHeld);
 
               return (
                 <div key={item.id} className={`prop-card ${isTransferred ? 'transferred' : ''}`}>
                   <div className="prop-header">
                     <div className="prop-id">{item.propertyId || "Unknown ID"}</div>
-
-                    {/* Status Badge Logic */}
                     {isTransferred ? (
                       <span className="status-badge moved">TRANSFERRED</span>
                     ) : (
@@ -266,14 +317,10 @@ function App() {
                     <div className="meta-row">
                       <span>{isTransferred ? "TRANSFERRED TO" : "CURRENT OWNER"}</span>
                       <span className="mono" title={owner}>
-                        {/* SAFE SUBSTRING CHECK */}
-                        {owner.length > 10
-                          ? `${owner.substring(0, 6)}...${owner.substring(38)}`
-                          : "Unknown"}
+                        {owner.length > 10 ? `${owner.substring(0, 6)}...${owner.substring(38)}` : "Unknown"}
                       </span>
                     </div>
 
-                    {/* Only show creator row if it's a transferred asset in portfolio view */}
                     {isTransferred && (
                       <div className="meta-row dim">
                         <span>CREATOR (YOU)</span>
@@ -286,10 +333,7 @@ function App() {
                     <div className="meta-row">
                       <span>TX PROOF</span>
                       <span className="mono" title={txHash}>
-                        {/* SAFE SUBSTRING CHECK */}
-                        {txHash.length > 10
-                          ? `${txHash.substring(0, 8)}...`
-                          : "Pending..."}
+                        {txHash.length > 10 ? `${txHash.substring(0, 8)}...` : "Pending..."}
                       </span>
                     </div>
                   </div>

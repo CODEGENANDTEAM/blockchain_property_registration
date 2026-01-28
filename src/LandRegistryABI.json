@@ -47,6 +47,25 @@
 		"inputs": [
 			{
 				"internalType": "string",
+				"name": "_propertyId",
+				"type": "string"
+			}
+		],
+		"name": "getOwner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
 				"name": "",
 				"type": "string"
 			}
