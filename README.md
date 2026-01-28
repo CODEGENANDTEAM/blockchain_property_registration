@@ -1,16 +1,37 @@
-# React + Vite
+#  Decentralized Land Registry System (DApp)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A secure, blockchain-based property registration and transfer system. This application uses **Ethereum Smart Contracts** to prove ownership and **Firebase** to index data for a fast, modern user interface.
 
-Currently, two official plugins are available:
+##  Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+* **Immutable Registration:** Mint unique property IDs onto the local blockchain.
+* **Ownership Transfer:** Securely transfer assets from your wallet to another user.
+* **Live Verification:** Verify property ownership directly from the blockchain (bypassing the database).
+* **Dual-View Gallery:**
+    * **Global Registry:** See all registered assets.
+    * **My Portfolio:** Filter assets created or currently owned by you.
+* **Real-time Wallet Status:** Live display of current account address and ETH balance.
+* **Minimalist UI:** Clean, monochrome aesthetic with responsive design.
 
-## React Compiler
+##  Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+* **Frontend:** React.js (Vite/CRA)
+* **Blockchain:** Ganache (Local Ethereum Node)
+* **Smart Contract:** Solidity (v0.8.19 - Paris EVM)
+* **Integration:** Web3.js
+* **Indexing/DB:** Firebase Firestore
 
-## Expanding the ESLint configuration
+##  Prerequisites
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1.  **Node.js** (v16 or higher)
+2.  **Ganache GUI** (Running on port `7545`)
+3.  **Firebase Account** (Firestore Database enabled)
+4.  **Remix IDE** (For compiling/deploying the contract)
+
+##  Installation & Setup
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/CODEGENANDTEAM/blockchain_property_registration.git
+cd land-registry
+npm install
